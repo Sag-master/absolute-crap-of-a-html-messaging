@@ -2,41 +2,56 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Supabase Image Chat</title>
+<title>Supabase Dark Chat with Servers</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #f7f7f7;
-    padding: 20px;
+  body { 
+    font-family: Arial, sans-serif; 
+    background: #121212; 
+    color: #e0e0e0; 
+    padding: 20px; 
   }
-  #chat {
-    max-width: 600px;
-    margin: auto;
-    background: white;
-    padding: 15px;
-    height: 70vh;
-    overflow-y: auto;
-    border-radius: 8px;
+  #chat { 
+    max-width: 600px; 
+    margin: auto; 
+    background: #1e1e1e; 
+    padding: 15px; 
+    height: 60vh; 
+    overflow-y: auto; 
+    border-radius: 8px; 
   }
-  .msg {
-    margin-bottom: 10px;
-    border-bottom: 1px solid #ddd;
-    padding: 5px;
+  .msg { 
+    margin-bottom: 10px; 
+    border-bottom: 1px solid #333; 
+    padding: 5px; 
   }
-  .msg img {
-    max-width: 100%;
-    border-radius: 5px;
-    margin-top: 5px;
+  .msg img { 
+    max-width: 100%; 
+    border-radius: 5px; 
+    margin-top: 5px; 
   }
-  #controls {
-    max-width: 600px;
-    margin: 10px auto;
-    display: flex;
-    gap: 5px;
+  input, button { 
+    padding: 8px; 
+    border-radius: 5px; 
+    border: none; 
+    outline: none; 
+  }
+  input { background: #2c2c2c; color: #e0e0e0; flex: 1; }
+  button { background: #3a86ff; color: white; cursor: pointer; }
+  button:hover { background: #2e6edc; }
+  #controls, #nicknameRoom { 
+    max-width: 600px; 
+    margin: 10px auto; 
+    display: flex; 
+    gap: 5px; 
   }
 </style>
 </head>
 <body>
+
+<div id="nicknameRoom">
+  <input type="text" id="nickname" placeholder="Enter nickname..." maxlength="20">
+  <input type="text" id="room" placeholder="Enter server/room..." maxlength="20" value="general">
+</div>
 
 <div id="chat"></div>
 
@@ -47,86 +62,90 @@
 </div>
 
 <script type="module">
-  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-  // ====== REPLACE THESE WITH YOUR SUPABASE CONFIG ======
-  const SUPABASE_URL = "https://jbqgxmuemlufrnzuqsmx.supabase.com";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpicWd4bXVlbWx1ZnJuenVxc214Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxNTU4NzYsImV4cCI6MjA4NzczMTg3Nn0.9O72cxbWoW2neWPY6SGRmfI232J3IUH8oVNaQFkxXzc;"
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  // =====================================================
+// 🔴 REPLACE THESE WITH YOUR SUPABASE CONFIG 🔴
+const SUPABASE_URL = "https://fdyfhnjuaxuahzkdebjg.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_w5x7cRBw7v4Wr-zhvOlN7w_UYhzlzuw";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const chatDiv = document.getElementById("chat");
-  const textInput = document.getElementById("textInput");
-  const fileInput = document.getElementById("fileInput");
-  const sendBtn = document.getElementById("sendBtn");
+const chatDiv = document.getElementById("chat");
+const textInput = document.getElementById("textInput");
+const fileInput = document.getElementById("fileInput");
+const sendBtn = document.getElementById("sendBtn");
+const nicknameInput = document.getElementById("nickname");
+const roomInput = document.getElementById("room");
 
-  // Helper to display a message
-  function appendMessage(msg) {
-    const div = document.createElement("div");
-    div.className = "msg";
+let currentRoom = roomInput.value.trim() || 'general';
+let subscription = null;
 
-    div.innerHTML = `<strong>${msg.username || "Anon"}:</strong> ${msg.text || ""}`;
-
-    if (msg.image_path) {
-      const img = document.createElement("img");
-      // Generate public URL
-      const url = supabase.storage
-        .from("chat-images")
-        .getPublicUrl(msg.image_path).publicURL;
-      img.src = url;
-      div.appendChild(img);
-    }
-    chatDiv.appendChild(div);
-    chatDiv.scrollTop = chatDiv.scrollHeight;
+// Display message in chat
+function appendMessage(msg) {
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = `<strong>${msg.username || "Anon"}:</strong> ${msg.text || ""}`;
+  if (msg.image_path) {
+    const img = document.createElement("img");
+    const url = supabase.storage.from("chat-images").getPublicUrl(msg.image_path).publicURL;
+    img.src = url;
+    div.appendChild(img);
   }
+  chatDiv.appendChild(div);
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+}
 
-  // Load existing messages
-  async function loadMessages() {
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    chatDiv.innerHTML = "";
-    data.forEach(appendMessage);
-  }
-
-  loadMessages();
-
-  // Listen for real-time new messages
-  supabase
+// Load messages for the room
+async function loadMessages() {
+  const { data } = await supabase
     .from("messages")
+    .select("*")
+    .eq("room", currentRoom)
+    .order("created_at", { ascending: true });
+  chatDiv.innerHTML = "";
+  data.forEach(appendMessage);
+}
+
+// Listen for real-time messages in current room
+function subscribeRoom() {
+  if (subscription) supabase.removeSubscription(subscription);
+  subscription = supabase
+    .from(`messages:room=eq.${currentRoom}`)
     .on("INSERT", payload => appendMessage(payload.new))
     .subscribe();
+}
 
-  sendBtn.onclick = async () => {
-    const text = textInput.value.trim();
-    const file = fileInput.files[0];
-    if (!text && !file) return;
+// Switch rooms
+roomInput.addEventListener('change', () => {
+  currentRoom = roomInput.value.trim() || 'general';
+  loadMessages();
+  subscribeRoom();
+});
 
-    let image_path = null;
+// Initial load
+loadMessages();
+subscribeRoom();
 
-    // Upload image if selected
-    if (file) {
-      const filename = Date.now() + "_" + file.name;
-      const { error } = await supabase.storage
-        .from("chat-images")
-        .upload(filename, file);
+sendBtn.onclick = async () => {
+  const text = textInput.value.trim();
+  const file = fileInput.files[0];
+  const nickname = nicknameInput.value.trim() || "Anon";
+  const room = currentRoom;
 
-      if (error) {
-        alert("Image upload failed");
-        return;
-      }
-      image_path = filename;
-    }
+  if (!text && !file) return;
 
-    await supabase
-      .from("messages")
-      .insert({ username: "Anon", text, image_path });
+  let image_path = null;
+  if (file) {
+    const filename = Date.now() + "_" + file.name;
+    const { error } = await supabase.storage.from("chat-images").upload(filename, file);
+    if (error) { alert("Image upload failed"); return; }
+    image_path = filename;
+  }
 
-    textInput.value = "";
-    fileInput.value = "";
-  };
+  await supabase.from("messages").insert({ username: nickname, text, image_path, room });
+
+  textInput.value = "";
+  fileInput.value = "";
+};
 </script>
 
 </body>
